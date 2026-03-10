@@ -184,6 +184,7 @@ public abstract class CommonExecTableSourceScan extends ExecNodeBase<RowData>
                             .getTransformation();
             meta.fill(sourceTransform);
         } else if (provider instanceof DataStreamScanProvider) {
+            lineageVertex = TableLineageUtils.extractLineageDataset(provider);
             sourceTransform =
                     ((DataStreamScanProvider) provider)
                             .produceDataStream(createProviderContext(config), env)
@@ -215,6 +216,18 @@ public abstract class CommonExecTableSourceScan extends ExecNodeBase<RowData>
         if (sourceTransform instanceof TransformationWithLineage) {
             ((TransformationWithLineage<RowData>) sourceTransform)
                     .setLineageVertex(sourceLineageVertex);
+        } else {
+            // When DataStreamScanProvider returns a multi-operator pipeline, the outermost
+            // transformation may not implement TransformationWithLineage. Search the transitive
+            // predecessors to find a SourceTransformation or LegacySourceTransformation that does.
+            for (Transformation<?> predecessor : sourceTransform.getTransitivePredecessors()) {
+                if (predecessor != sourceTransform
+                        && predecessor instanceof TransformationWithLineage) {
+                    ((TransformationWithLineage<?>) predecessor)
+                            .setLineageVertex(sourceLineageVertex);
+                    break;
+                }
+            }
         }
 
         if (sourceParallelismConfigured) {
